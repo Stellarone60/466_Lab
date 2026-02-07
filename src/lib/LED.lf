@@ -17,11 +17,13 @@ reactor LED {
   =}
 
   reaction(set) {=
+   // Logging the LED state for debug purposes.
     if (set->value) {
       printf("LED ON\n");
     } else {
       printf("LED OFF\n");
     }
+    // Change the LED state. Remeber the ->value part!
     gpio_put(PICO_DEFAULT_LED_PIN, set->value);
   =}
 }

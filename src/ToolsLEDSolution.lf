@@ -14,8 +14,11 @@ main reactor {
   state led_on: bool = false
 
   reaction(t) -> led.set {=
+    // Print the current state for debug purposes.
     printf("Toggled LED: %d\n", self->led_on);
+    // Switch the local LED state variable.
     self->led_on = !self->led_on;
+    // Send the state to the LED reactor to interact with the robot.
     lf_set(led.set, self->led_on);
   =}
 }
