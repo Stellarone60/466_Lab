@@ -1,0 +1,43 @@
+target C {
+  platform: {
+    name: "rp2040",
+    board: "pololu_3pi_2040_robot"
+  },
+  single-threaded: true
+}
+
+import LED from "lib/LED.lf"
+
+main reactor {
+  timer t(0, 250 ms)
+  led = new LED()
+  state led_on: bool = false
+  state count_max: int = 1
+  state count_now: int = 0
+  state sleep_now: int = 0
+
+  reaction(t) -> led.set {=
+    printf("TIME\n");
+    if (self->count_now < 2 * self->count_max) {
+      printf("Toggling LED: %d\n", self->led_on);
+      self->led_on = !self->led_on;
+      self->count_now += 1;
+      lf_set(led.set, self->led_on);
+      return;
+    }
+    
+    if (self->sleep_now < 4) {
+      self->sleep_now += 1;
+      printf("Sleeping %d\n", self->sleep_now);
+      return;
+    }
+
+    self->sleep_now = 0;
+    self->count_now = 0;
+    self->count_max += 1;
+    printf("Incrementing count_max to %d\n", self->count_max);
+    if (self->count_max > 4) {
+      self->count_max = 1;
+    }
+  =}
+}
