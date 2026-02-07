@@ -12,32 +12,45 @@ main reactor {
   timer t(0, 250 ms)
   led = new LED()
   state led_on: bool = false
-  state count_max: int = 1
+  state blink_count: int = 1
   state count_now: int = 0
   state sleep_now: int = 0
 
   reaction(t) -> led.set {=
-    printf("TIME\n");
-    if (self->count_now < 2 * self->count_max) {
+    // Since we need to leave it on for a short bit
+    // and turn it off, we multiply blink_count by 2  
+    if (self->count_now < 2 * self->blink_count) {
       printf("Toggling LED: %d\n", self->led_on);
       self->led_on = !self->led_on;
-      self->count_now += 1;
       lf_set(led.set, self->led_on);
-      return;
+      
+      self->count_now += 1;
+
+      // Start the 1 sec delay immediately after the
+      // led turns off for the last time
+      if (self->count_now < 2 * self->blink_count) {
+        return;
+      }
     }
     
+    // Wait 1 second (4 x 250ms)
     if (self->sleep_now < 4) {
       self->sleep_now += 1;
       printf("Sleeping %d\n", self->sleep_now);
-      return;
-    }
 
-    self->sleep_now = 0;
-    self->count_now = 0;
-    self->count_max += 1;
-    printf("Incrementing count_max to %d\n", self->count_max);
-    if (self->count_max > 4) {
-      self->count_max = 1;
+      // On the last sleep reset everything and increment the blink count
+      if (self->sleep_now == 4) {
+        self->sleep_now = 0;
+        self->count_now = 0;
+        self->blink_count += 1;
+        
+        // Wrap around back to 1
+        if (self->blink_count > 4) {
+          self->blink_count = 1;
+        }
+
+        printf("Incrementing blink_count to %d\n", self->blink_count);
+      }
     }
   =}
 }
