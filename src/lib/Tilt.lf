@@ -23,7 +23,11 @@ reactor Tilt {
     =}
 
     reaction(a.x, a.y, a.z) -> pitch, roll {=
-        lf_set(pitch, atan2(a.x->value, a.z->value) * (180 / M_PI));
-        lf_set(roll, atan2(a.y->value, a.z->value) * (180 / M_PI));
+        // Radians to degrees constant
+        const double rad2deg = 180 / M_PI;
+
+        // Use atan2 to calculate the angles in radians
+        lf_set(pitch, atan2(a.x->value, a.z->value) * rad2deg);
+        lf_set(roll, atan2(a.y->value, a.z->value) * rad2deg);
     =}
 }
