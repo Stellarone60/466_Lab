@@ -14,6 +14,7 @@
 #define _IMU_REG_CTRL1_XL 0x10
 #define _IMU_REG_CTRL2_G 0x11
 #define _IMU_REG_CTRL3_C 0x12
+#define _IMU_REG_CTRL8_XL 0x17
 #define _IMU_STATUS_REG 0x1E
 #define _IMU_OUTX_L_G 0x22
 #define _IMU_OUTX_L_XL 0x28

@@ -8,9 +8,10 @@
 // Output Data Rate
 const uint8_t odr_acc = 0b0011; // 52Hz
 const uint8_t odr_gyro = 0b0101; // 208Hz
+const uint8_t hp_lpf_cutoff = 0b111; // ODR/800
 
 // Measurement Ranges
-const uint8_t fs_acc = 0b00; // +- 2g
+const uint8_t fs_acc = 0b01; // +- 16g
 const uint8_t fs_gyro = 0b110; // +- 2000 dps
 
 // Sensitivity Multipliers 
@@ -95,14 +96,19 @@ void _imu_set() {
     
     uint8_t cmd_acc_buf[2] = {_IMU_REG_CTRL1_XL, 0x00};
     uint8_t cmd_gyro_buf[2] = {_IMU_REG_CTRL2_G, 0x00};
+    uint8_t cmd_ctrl8_buf[2] = {_IMU_REG_CTRL8_XL, 0x00};
     
     // write to CTRL1_XL
-    cmd_acc_buf[1] = (odr_acc << 4 | fs_acc << 2) | 0b00;
+    cmd_acc_buf[1] = (odr_acc << 4 | fs_acc << 2) | 0b10;
     i2c_write_blocking(i2c0, _IMU_ADDR, cmd_acc_buf, 2, false);
     
     // write to CTRL2_G
     cmd_gyro_buf[1] = (odr_gyro << 4 | fs_gyro << 1) | 0b0;
     i2c_write_blocking(i2c0, _IMU_ADDR, cmd_gyro_buf, 2, false);
+
+    // write to CTRL8_XL
+    cmd_ctrl8_buf[1] = hp_lpf_cutoff << 5 | 0b00000;
+    i2c_write_blocking(i2c0, _IMU_ADDR, cmd_ctrl8_buf, 2, false);
 }
 
 uint imu_read_acc(imu_inst_t* imu_inst, axes_data_t* acc_data) {
