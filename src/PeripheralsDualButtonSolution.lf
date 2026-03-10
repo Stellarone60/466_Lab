@@ -1,0 +1,120 @@
+/**
+ * Display the outputs from the line sensors on the
+ * <a href="https://www.pololu.com/docs/0J86">Pololu 3pi+ 2040 robot</a>. This program spends the
+ * first 10 seconds in calibration mode, during which you should move the robot over the light and
+ * dark areas that you would like it to detect. It then switches into measurement mode and displays
+ * the measured reflectance of the five IR sensors.
+ *
+ * @author Abhi Gundrala
+ * @author Edward A. Lee
+ */
+target C {
+  platform: {
+    name: "rp2040",
+    board: "pololu_3pi_2040_robot"
+  },
+  single-threaded: true
+}
+
+import Display from "lib/Display.lf"
+
+preamble {=
+    #include "hardware/gpio.h"
+    #include "hardware/sync.h"
+    #include "hardware/resets.h"
+    #include "hardware/clocks.h"
+    #include "hardware/structs/ioqspi.h"
+    #include "hardware/structs/sio.h"
+    static bool __no_inline_not_in_flash_func(get_b_button)(void) {
+        const uint CS_PIN_INDEX = 1;
+
+        // Must disable interrupts, as interrupt handlers may be in flash, and we
+        // are about to temporarily disable flash access!
+        uint32_t flags = save_and_disable_interrupts();
+
+        // Set chip select to Hi-Z
+        hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
+                        GPIO_OVERRIDE_LOW << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
+                        IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
+
+        // Note we can't call into any sleep functions in flash right now
+        for (volatile int i = 0; i < 1000; ++i);
+
+        // The HI GPIO registers in SIO can observe and control the 6 QSPI pins.
+        // Note the button pulls the pin *low* when pressed.
+
+        #ifdef __ARM_ARCH_6M__ // CM0 for rp2040
+            #define CS_BIT (1u << 1)
+        #else // rp2350 (cm33/risv)
+            #define CS_BIT SIO_GPIO_HI_IN_QSPI_CSN_BITS
+        #endif
+        bool button_state = (sio_hw->gpio_hi_in & CS_BIT);
+
+        // Need to restore the state of chip select, else we are going to have a
+        // bad time when we return to code in flash!
+        hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
+                        GPIO_OVERRIDE_NORMAL << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
+                        IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
+
+        restore_interrupts(flags);
+
+        return button_state;
+    }    
+=}
+
+main reactor {
+  disp = new Display()
+  timer t(0, 50ms)
+  state last_a_button: bool = false
+  state last_b_button: bool = false
+  state count_a: int = 0
+  state count_b: int = 0
+
+  reaction(startup) {=
+    gpio_init(PICO_DEFAULT_LED_PIN);
+  =}
+
+  reaction(t) -> disp.line0, disp.line1 {=
+    // Read button values from GPIO
+    uint32_t *gpio_in = (uint32_t *)0xd0000004;
+    uint32_t button_a_mask = 1ul << PICO_DEFAULT_LED_PIN;
+    bool button_a_pressed = !(*gpio_in & button_a_mask);
+
+    // Waaay to complicated to read this...
+    bool button_b_pressed = !get_b_button();
+
+    // Increment A count if prev cycle had A button off
+    // and this cycle has A button on, then update last
+    // cycle state
+    if (button_a_pressed && !self->last_a_button) {
+        self->count_a++;
+    }
+    self->last_a_button = button_a_pressed;
+
+    // Increment B count if prev cycle had B button off
+    // and this cycle has B button on, then update last
+    // cycle state
+    if (button_b_pressed && !self->last_b_button) {
+        self->count_b++;
+    }
+    self->last_b_button = button_b_pressed;
+
+    // Reset count if both are pressed
+    if (button_a_pressed && button_b_pressed) {
+        self->count_a = 0;
+        self->count_b = 0;
+    }
+
+    // Initialize string buffers
+    static char buf0[17];
+    static char buf1[17];
+
+    // Write the A and B counts to the buffers
+    snprintf(buf0, 17, "A:%d", self->count_a);
+    snprintf(buf1, 17, "B:%d", self->count_b);
+
+    // Send buffers to display
+    lf_set(disp.line0, buf0);
+    lf_set(disp.line1, buf1);
+  =}
+}
