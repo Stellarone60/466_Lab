@@ -27,9 +27,14 @@ main reactor{
 
     preamble {=
     static void* action;
+    static instant_t physical_time;
         void new_callback_function(uint gpio, uint32_t event_mask)
     {
-        lf_schedule(action, 0);
+        if(lf_time_physical_elapsed() - physical_time >= MSEC(200))
+        {
+            lf_schedule(action, 0);
+        }
+        physical_time = lf_time_physical_elapsed();
     }
 
         =}
