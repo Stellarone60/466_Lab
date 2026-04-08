@@ -1,0 +1,40 @@
+/**
+ * Display the outputs from the line sensors on the
+ * <a href="https://www.pololu.com/docs/0J86">Pololu 3pi+ 2040 robot</a>. This program spends the
+ * first 10 seconds in calibration mode, during which you should move the robot over the light and
+ * dark areas that you would like it to detect. It then switches into measurement mode and displays
+ * the measured reflectance of the five IR sensors.
+ *
+ * @author Abhi Gundrala
+ * @author Edward A. Lee
+ */
+target C {
+  platform: {
+    name: "rp2040",
+    board: "pololu_3pi_2040_robot"
+  },
+  single-threaded: true,
+  keepalive: true
+}
+
+preamble {=
+    #include <stdio.h>
+    #include <pico/stdlib.h>
+    #include <hardware/gpio.h>
+    =}
+
+main reactor{
+    preamble {=
+        void new_callback_function(uint gpio, uint32_t event_mask)
+    {
+        printf("gpio: %d    event_mask: %d\n", gpio, event_mask);
+    }
+        =}
+
+    reaction(startup) {=
+        gpio_init(PICO_DEFAULT_LED_PIN);
+        gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_IN);
+        gpio_pull_up(PICO_DEFAULT_LED_PIN);
+        gpio_set_irq_enabled_with_callback(25, GPIO_IRQ_EDGE_FALL, true, new_callback_function);
+        =}
+}
