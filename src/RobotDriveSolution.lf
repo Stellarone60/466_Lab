@@ -25,6 +25,7 @@ reactor Robot {
   =}
 
   initial mode STOPPED {
+    // Switch to driving when triggered
     reaction(drive) -> reset(DRIVING), notify, motors.left_power, motors.right_power {=
       if (drive->value) {
         lf_set_mode(DRIVING);
@@ -36,6 +37,7 @@ reactor Robot {
   }
 
   mode DRIVING {
+    // Switch to stopped when triggered
     reaction(drive) -> reset(STOPPED), notify, motors.left_power, motors.right_power {=
       if (!drive->value) {
         lf_set_mode(STOPPED);

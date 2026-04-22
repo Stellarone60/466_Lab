@@ -62,11 +62,13 @@ reactor Robot {
   initial mode DRIVING {
     angleToDistance = new AngleToDistance()
     
+    // Update the distance and make sure to get the correct measurement
     reaction(encoder.left) -> angleToDistance.angle {=
         lf_set(angleToDistance.angle, encoder.left->value - self->leftStartAngle);
         self->leftStartAngle2 = encoder.left->value;
         =}
-
+    
+    // Switch to turning once we've gone the desired distance
     reaction(angleToDistance.distance) -> reset(TURNING), notify, motors.left_power, motors.right_power {=
         if(angleToDistance.distance->value >= .5)
         {
@@ -77,12 +79,20 @@ reactor Robot {
           
         }
         =}
-    
+    // Make sure to change the initial z value
     reaction(gyro.z) {=
         self->initialZ = gyro.z->value;
         =}
-
+    
+    // Handle bumper sensors.
     reaction(bumper.left) -> reset(BACK), notify, motors.left_power, motors.right_power {=
+      lf_set_mode(BACK);
+        lf_set(notify, "BUMPED");
+        lf_set(motors.left_power, -.1f);
+        lf_set(motors.right_power, -.1f);
+      =}
+
+      reaction(bumper.right) -> reset(BACK), notify, motors.left_power, motors.right_power {=
       lf_set_mode(BACK);
         lf_set(notify, "BUMPED");
         lf_set(motors.left_power, -.1f);
@@ -92,6 +102,8 @@ reactor Robot {
   
   //turning mode
   mode TURNING {
+
+    // Switch to driving once we'veturned the desired amount
     reaction(gyro.z) -> reset(DRIVING), notify, motors.left_power, motors.right_power {=
       if(fabsf(gyro.z->value - self->initialZ) >= 90)
       {
@@ -101,7 +113,7 @@ reactor Robot {
         lf_set(motors.right_power, .5f);
       }
     =}
-
+    // Keep track of the encoder value
     reaction(encoder.left) {=
         self->leftStartAngle = encoder.left->value;
         =}
@@ -114,6 +126,7 @@ reactor Robot {
         lf_set(angleToDistance1.angle, encoder.left->value - self->leftStartAngle2);
         =}
 
+    // Switch to turning once we've gone far enough away from the obstacle
     reaction(angleToDistance1.distance) -> reset(TURNING), notify, motors.left_power, motors.right_power {=
         if(angleToDistance1.distance->value <= -.1)
         {
@@ -125,6 +138,7 @@ reactor Robot {
         }
         =}
     
+    // Keep track of the initial z value
     reaction(gyro.z) {=
         self->initialZ = gyro.z->value;
         =}
@@ -137,6 +151,7 @@ main reactor {
   display = new Display()
   robot.notify -> display.line0
   
+  // Initial command to start the robot
   reaction(startup) -> robot.drive {=
     lf_set(robot.drive, true);
   =}

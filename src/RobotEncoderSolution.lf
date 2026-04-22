@@ -27,7 +27,8 @@ reactor AngleToDistance{
     reaction(startup) -> distance{=
         lf_set(distance, 0);
     =}
-
+    
+    // When angle is passed in, convert to distance
     reaction(angle) -> distance {=
         float result = angle->value*((M_PI*.03175)/360);
         lf_set(distance, result);
@@ -50,20 +51,24 @@ main reactor {
     lf_set(display.line0, "ENCODERS:");
   =}
 
+  // Handle encoder conversion
   reaction(encoder.left) -> angleToDistanceLeft.angle {=
     lf_set(angleToDistanceLeft.angle, encoder.left->value);
   =}
-
+  
+  // Handle encoder conversion
   reaction(encoder.right) -> angleToDistanceRight.angle {=
     lf_set(angleToDistanceRight.angle, encoder.right->value);
   =}
 
+  // Print left encoder distance
   reaction(angleToDistanceLeft.distance) -> display.line1 {=
     static char buf[17];
     snprintf(buf, 17, "L: %f", angleToDistanceLeft.distance->value);
     lf_set(display.line1, buf);
   =}
 
+  // Print right encoder distance
   reaction(angleToDistanceRight.distance) -> display.line2 {=
     static char buf[17];
     snprintf(buf, 17, "R: %f", angleToDistanceRight.distance->value);

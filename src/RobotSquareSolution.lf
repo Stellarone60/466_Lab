@@ -62,7 +62,8 @@ reactor Robot {
     reaction(encoder.left) -> angleToDistance.angle {=
         lf_set(angleToDistance.angle, encoder.left->value - self->leftStartAngle);
         =}
-
+    
+    // If we've gone far enough, switch to turning
     reaction(angleToDistance.distance) -> reset(TURNING), notify, motors.left_power, motors.right_power {=
         if(angleToDistance.distance->value >= .5)
         {
@@ -81,6 +82,7 @@ reactor Robot {
   
   //turning mode
   mode TURNING {
+    // If we've turned far enough, switch to driving
     reaction(gyro.z) -> reset(DRIVING), notify, motors.left_power, motors.right_power {=
       if(fabsf(gyro.z->value - self->initialZ) >= 90)
       {
