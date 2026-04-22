@@ -1,0 +1,143 @@
+target C {
+  platform: {
+    name: "rp2040",
+    board: "pololu_3pi_2040_robot"
+  },
+  single-threaded: true,
+  keepalive: true
+}
+
+import GyroAngle from "lib/IMU.lf"
+import Motors from "lib/Motors.lf"
+import Display from "lib/Display.lf"
+import Encoders from "lib/Encoders.lf"
+import Bump from "lib/Bump.lf"
+
+preamble {=
+    #include <stdio.h>
+    #include <math.h>
+    =}
+
+reactor AngleToDistance{
+    input angle: int;
+    output distance: float;
+
+    reaction(startup) -> distance{=
+        lf_set(distance, 0);
+    =}
+
+    reaction(angle) -> distance {=
+        float result = angle->value*((M_PI*.03175)/360);
+        lf_set(distance, result);
+    =}
+}
+
+reactor Robot {
+  input drive: bool      // Toggle mode.
+  output notify: string  // Notify of mode change.
+  motors = new Motors()
+  encoder = new Encoders()
+  gyro = new GyroAngle()
+  state initialZ: float = 0
+  state leftStartAngle: int = 0
+  state leftStartAngle2: int = 0
+  timer t(0, 1 ms)
+  bumper = new Bump()
+
+  reaction(startup) -> notify, motors.left_power, motors.right_power, encoder.trigger, bumper.calibrate {=
+    lf_set(notify, "INIT");
+    lf_set(encoder.trigger, true);
+    lf_set(motors.left_power, .5f);
+    lf_set(motors.right_power, .5f);
+    lf_set(bumper.calibrate, true);
+  =}
+
+  // handle the gyro and encoder triggers
+  reaction(t) -> gyro.trigger, encoder.trigger {=
+        lf_set(gyro.trigger, true);
+        lf_set(encoder.trigger, true);
+        =}
+
+  //driving mode
+  initial mode DRIVING {
+    angleToDistance = new AngleToDistance()
+    
+    reaction(encoder.left) -> angleToDistance.angle {=
+        lf_set(angleToDistance.angle, encoder.left->value - self->leftStartAngle);
+        self->leftStartAngle2 = encoder.left->value;
+        =}
+
+    reaction(angleToDistance.distance) -> reset(TURNING), notify, motors.left_power, motors.right_power {=
+        if(angleToDistance.distance->value >= .5)
+        {
+          lf_set_mode(TURNING);
+          lf_set(notify, "TURNING");
+          lf_set(motors.left_power, .1f);
+          lf_set(motors.right_power, 0.f);
+          
+        }
+        =}
+    
+    reaction(gyro.z) {=
+        self->initialZ = gyro.z->value;
+        =}
+
+    reaction(bumper.left) -> reset(BACK), notify, motors.left_power, motors.right_power {=
+      lf_set_mode(BACK);
+        lf_set(notify, "BUMPED");
+        lf_set(motors.left_power, -.1f);
+        lf_set(motors.right_power, -.1f);
+      =}
+  }
+  
+  //turning mode
+  mode TURNING {
+    reaction(gyro.z) -> reset(DRIVING), notify, motors.left_power, motors.right_power {=
+      if(fabsf(gyro.z->value - self->initialZ) >= 90)
+      {
+        lf_set_mode(DRIVING);
+        lf_set(notify, "DRIVING");
+        lf_set(motors.left_power, .5f);
+        lf_set(motors.right_power, .5f);
+      }
+    =}
+
+    reaction(encoder.left) {=
+        self->leftStartAngle = encoder.left->value;
+        =}
+  }
+
+  mode BACK{
+    angleToDistance1 = new AngleToDistance()
+    
+    reaction(encoder.left) -> angleToDistance1.angle {=
+        lf_set(angleToDistance1.angle, encoder.left->value - self->leftStartAngle2);
+        =}
+
+    reaction(angleToDistance1.distance) -> reset(TURNING), notify, motors.left_power, motors.right_power {=
+        if(angleToDistance1.distance->value <= -.1)
+        {
+          lf_set_mode(TURNING);
+          lf_set(notify, "TURNING");
+          lf_set(motors.left_power, .1f);
+          lf_set(motors.right_power, 0.f);
+          
+        }
+        =}
+    
+    reaction(gyro.z) {=
+        self->initialZ = gyro.z->value;
+        =}
+
+  }
+}
+
+main reactor {
+  robot = new Robot()
+  display = new Display()
+  robot.notify -> display.line0
+  
+  reaction(startup) -> robot.drive {=
+    lf_set(robot.drive, true);
+  =}
+}
