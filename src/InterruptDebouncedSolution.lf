@@ -41,6 +41,7 @@ main reactor{
         state lastPress: instant_t = 0
         physical action a
 
+    // Set up the interrupt on the button pin
     reaction(a) {=
         instant_t t = lf_time_logical();
         instant_t difference = t - self->lastPress;

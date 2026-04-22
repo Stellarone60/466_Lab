@@ -24,6 +24,7 @@ preamble {=
     =}
 
 main reactor{
+    // Add the callback function for the interrupt
     preamble {=
         void new_callback_function(uint gpio, uint32_t event_mask)
     {

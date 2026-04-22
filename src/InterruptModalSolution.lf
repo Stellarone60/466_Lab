@@ -51,11 +51,12 @@ main reactor{
 
     initial mode countUp
     {
-        
+        // Switch to counting down when triggered
         reaction(a) -> history(countDown) {=
             lf_set_mode(countDown);
         =}
 
+        // Increment and print count
         reaction(t) -> disp.line0 {=
             self->counter += 1;
             static char timestr[17];
@@ -65,11 +66,12 @@ main reactor{
     }
     mode countDown
     {
-        
+        // Switch to counting up when triggered
         reaction(a) -> history(countUp) {=
         lf_set_mode(countUp);
         =}
-
+        
+        // Decrement and print count
         reaction(t2) -> disp.line0{=
             self->counter--;
             static char timestr[17];

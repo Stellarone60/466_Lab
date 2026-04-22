@@ -36,6 +36,7 @@ main reactor{
         state lastPress: instant_t = 0
         physical action a
 
+    // Set up the interrupt on the button pin
     reaction(a) {=
         instant_t t = lf_time_logical();
         instant_t difference = t - self->lastPress;
@@ -43,6 +44,7 @@ main reactor{
         printf("Elapsed time since last button press: %lld ms\n", difference/1000000);
         =}
 
+    // Initialize the button pin and set up the interrupt
     reaction(startup) -> a {=
         gpio_init(PICO_DEFAULT_LED_PIN);
         gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_IN);
