@@ -1,0 +1,109 @@
+/**
+ * Display the outputs from the line sensors on the
+ * <a href="https://www.pololu.com/docs/0J86">Pololu 3pi+ 2040 robot</a>. This program spends the
+ * first 10 seconds in calibration mode, during which you should move the robot over the light and
+ * dark areas that you would like it to detect. It then switches into measurement mode and displays
+ * the measured reflectance of the five IR sensors.
+ *
+ * @author Abhi Gundrala
+ * @author Edward A. Lee
+ */
+target C {
+  platform: {
+    name: "rp2040",
+    board: "pololu_3pi_2040_robot"
+  },
+  single-threaded: true
+}
+
+import Line from "lib/Line.lf"
+import Display from "lib/Display.lf"
+import Motors from "lib/Motors.lf"
+
+main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
+  line = new Line()
+  disp = new Display()
+  motors = new Motors()
+
+  timer t(0, sample_period)
+  timer end_calibration(calibration_time)
+  state count: int = 0
+  state dir: int = 0
+
+  reaction(startup) -> disp.line0, disp.line1, disp.line2 {=
+    lf_set(disp.line0, "CALIBRATING");
+    lf_set(disp.line1, "Roll robot over");
+    lf_set(disp.line2, "light and dark.");
+  =}
+
+  reaction(end_calibration) -> line.calibrate, motors.left_power, motors.right_power {=
+    lf_set(line.calibrate, false);
+    lf_set(motors.right_power, 0.1f);
+    lf_set(motors.left_power, 0.1f);
+  =}
+
+  reaction(t) -> line.trigger {=
+    lf_set(line.trigger, true);
+  =}
+
+  reaction(line.reflect) -> disp.line0, disp.line1, disp.line2, disp.line3, motors.left_power, motors.right_power {=
+    const int DARK_THRESH = 600;
+
+    static char buf0[17];
+    static char buf1[17];
+    static char buf2[17];
+
+    bool left = line.reflect->value[0] > DARK_THRESH || line.reflect->value[1] > DARK_THRESH;
+    bool center = line.reflect->value[1] > DARK_THRESH || line.reflect->value[2] > DARK_THRESH || line.reflect->value[3] > DARK_THRESH;
+    bool right = line.reflect->value[3] > DARK_THRESH || line.reflect->value[4] > DARK_THRESH;
+
+    snprintf(buf0, 17, "0:%2d 1:%2d 2:%2d", line.reflect->value[0] / 100, line.reflect->value[1] / 100, line.reflect->value[2] / 100);
+    snprintf(buf1, 17, "3:%2d 4:%2d %s", line.reflect->value[3] / 100, line.reflect->value[4] / 100, left ? "LEFT" : "");
+    snprintf(buf2, 17, "%s %s", center ? "CENTER" : "      ", right ? "RIGHT" : "");
+    lf_set(disp.line0, buf0);
+    lf_set(disp.line1, buf1);
+    lf_set(disp.line2, buf2);
+
+    if (left) {
+      self->dir = -1;
+    }
+
+    if (center || right) {
+      self->dir = 1;
+    }
+  =}
+
+  initial mode DRIVING {
+    timer detect_timer(0, sample_period)
+    reaction(detect_timer) -> reset(BACK), disp.line3, motors.left_power, motors.right_power {=
+      if (self->dir != 0) {
+        lf_set_mode(BACK);
+        lf_set(motors.right_power, -0.1f);
+        lf_set(motors.left_power, -0.1f);
+        lf_set(disp.line3, "BACK");
+      }
+    =}
+  }
+  
+  mode TURNING {
+    timer turn_timer(1 s, 1 s)
+
+    reaction(turn_timer) -> reset(DRIVING), disp.line3, motors.left_power, motors.right_power {=
+      lf_set_mode(DRIVING);
+      lf_set(motors.right_power, 0.1f);
+      lf_set(motors.left_power, 0.1f);
+      lf_set(disp.line3, "DRIVING");
+      self->dir = 0;
+    =}
+  }
+
+  mode BACK{
+    timer back_timer(1 s, 1 s)
+    reaction(back_timer) -> reset(TURNING), disp.line3, motors.left_power, motors.right_power {=
+      lf_set_mode(TURNING);
+      lf_set(motors.right_power, self->dir * 0.1f);
+      lf_set(motors.left_power, -self->dir * 0.1f);
+      lf_set(disp.line3, "TURNING");
+    =}
+  }
+}
