@@ -189,7 +189,7 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   
   mode DRIVING_DOWN {
     timer detect_timer2(0, sample_period)
-    reaction(detect_timer2, tilt.roll, tilt.pitch, gyro.z) -> reset(BACK_UP), reset(TURNING_AROUND), reset(CORRECT_PITCH_UP), disp.line3, motors.left_speed, motors.right_speed {=
+    reaction(detect_timer2, tilt.roll, tilt.pitch, gyro.z) -> reset(BACK_DOWN), reset(STOP), reset(CORRECT_PITCH_DOWN), disp.line3, motors.left_speed, motors.right_speed {=
       float roll = tilt.roll->value;
       float pitch = tilt.pitch->value;
       int pitch_sign = pitch > 0 ? 1 : -1;
@@ -218,10 +218,10 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
       }
 
       if (self->dir != 0) {
-        lf_set_mode(BACK_UP);
+        lf_set_mode(BACK_DOWN);
         lf_set(motors.right_speed, -0.1f);
         lf_set(motors.left_speed, -0.1f);
-        lf_set(disp.line3, "BACK_UP");
+        lf_set(disp.line3, "BACK_DOWN");
       }
     =}
   }
@@ -242,7 +242,7 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
     timer pitch_timer2(0 s, 1 s)
 
     reaction(pitch_timer2, tilt.pitch) -> reset(DRIVING_DOWN), reset(STOP), disp.line3, motors.left_speed, motors.right_speed {=
-      if (pitch < 2) {
+      if (tilt.pitch->value < 2) {
         lf_set_mode(STOP);
         lf_set(motors.right_speed, 0.0f);
         lf_set(motors.left_speed, 0.0f);
