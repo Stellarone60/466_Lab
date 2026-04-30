@@ -39,6 +39,29 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   state count: int = 0
   state dir: int = 0
   state gyro_turn_initial: float = 0
+  state pitch_buffer: float[10]
+  state roll_buffer: float[10]
+
+  method reset_buffer(buffer: float[], count: int) {=
+    for (int i = 0; i < count; i++) {
+      buffer[i] = 0;
+    }
+  =}
+
+  method cycle_buffer(buffer: float[], count: int, value: float) {=
+    for (int i = 0; i < count; i++) {
+      buffer[i] = buffer[i + 1];
+    }
+    buffer[count - 1] = value;
+  =}
+
+  method average_buffer(buffer: float[], count: int): float {=
+    float sum = 0;
+    for (int i = 0; i < count; i++) {
+      sum += buffer[i];
+    }
+    return sum / count;
+  =}
 
   reaction(startup) -> disp.line0, disp.line1, disp.line2 {=
     lf_set(disp.line0, "CALIBRATING");
@@ -50,11 +73,14 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
     lf_set(line.calibrate, false);
   =}
 
-  reaction(t) -> line.trigger, tilt.trigger, encoders.trigger, gyro.trigger {=
+  reaction(t) -> line.trigger, tilt.trigger, encoders.trigger, gyro.trigger, disp.line1 {=
     lf_set(line.trigger, true);
     lf_set(tilt.trigger, true);
     lf_set(encoders.trigger, true);
     lf_set(gyro.trigger, true);
+    static char buf0[17];
+    snprintf(buf0, 17, "Exit Pitch: %3.3f", average_buffer(self->pitch_buffer, 10));
+    lf_set(disp.line1, buf0);
   =}
 
   reaction(line.reflect) -> disp.line0, disp.line1, disp.line2, disp.line3, motors.left_speed, motors.right_speed {=
@@ -71,9 +97,9 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
     snprintf(buf0, 17, "0:%2d 1:%2d 2:%2d", line.reflect->value[0] / 100, line.reflect->value[1] / 100, line.reflect->value[2] / 100);
     snprintf(buf1, 17, "3:%2d 4:%2d %s", line.reflect->value[3] / 100, line.reflect->value[4] / 100, left ? "LEFT" : "");
     snprintf(buf2, 17, "%s %s", center ? "CENTER" : "      ", right ? "RIGHT" : "");
-    lf_set(disp.line0, buf0);
-    lf_set(disp.line1, buf1);
-    lf_set(disp.line2, buf2);
+    //lf_set(disp.line0, buf0);
+    //lf_set(disp.line1, buf1);
+    //lf_set(disp.line2, buf2);
 
     if (left) {
       self->dir = -1;
@@ -90,12 +116,16 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
       lf_set_mode(DRIVING_UP);
       lf_set(motors.right_speed, 0.1f);
       lf_set(motors.left_speed, 0.1f);
+      reset_buffer(self->pitch_buffer, 10);
+      reset_buffer(self->roll_buffer, 10);
     =}
   }
 
   mode DRIVING_UP {
     timer detect_timer(0, sample_period)
     reaction(detect_timer, tilt.roll, tilt.pitch, gyro.z) -> reset(BACK_UP), reset(TURNING_AROUND), reset(CORRECT_PITCH_UP), disp.line3, motors.left_speed, motors.right_speed {=
+      const int PITCH_THRESH = 2.0f;
+      
       float roll = tilt.roll->value;
       float pitch = tilt.pitch->value;
       int pitch_sign = pitch > 0 ? 1 : -1;
@@ -106,7 +136,7 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
       lf_set(motors.right_speed, right_speed);
 
       static char buf0[17];
-      snprintf(buf0, 17, "l:%1.2f r:%1.2f", left_speed, right_speed);
+      snprintf(buf0, 17, "l:%1.2f r:%1.2f U", left_speed, right_speed);
       lf_set(disp.line3, buf0);
       
       if (pitch_sign < 0) {
@@ -116,7 +146,10 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
         lf_set(motors.right_speed, 0.1f * roll_sign);
       }
 
-      if (pitch < 2) {
+      cycle_buffer(self->pitch_buffer, 10, pitch);
+      cycle_buffer(self->roll_buffer, 10, roll);
+      if (average_buffer(self->pitch_buffer, 10) > PITCH_THRESH && 
+          average_buffer(self->roll_buffer, 10) < PITCH_THRESH) {
         lf_set_mode(TURNING_AROUND);
         self->gyro_turn_initial = gyro.z->value;
         lf_set(motors.right_speed, -0.1f);
@@ -137,7 +170,8 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
     timer pitch_timer(0 s, 1 s)
 
     reaction(pitch_timer, tilt.pitch, gyro.z) -> reset(DRIVING_UP), reset(TURNING_AROUND), disp.line3, motors.left_speed, motors.right_speed {=
-      if (tilt.pitch->value < 2) {
+      cycle_buffer(self->pitch_buffer, 10, tilt.pitch->value);
+      if (average_buffer(self->pitch_buffer, 10) < 2) {
         lf_set_mode(TURNING_AROUND);
         self->gyro_turn_initial = gyro.z->value;
         lf_set(motors.right_speed, -0.1f);
@@ -153,7 +187,7 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   }
   
   mode TURNING_UP {
-    timer turn_timer(1 s, 1 s)
+    timer turn_timer(500 ms, 500 ms)
 
     reaction(turn_timer) -> reset(DRIVING_UP), disp.line3, motors.left_speed, motors.right_speed {=
       lf_set_mode(DRIVING_UP);
@@ -177,30 +211,43 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   mode TURNING_AROUND {
     timer turning_timer(0, sample_period)
 
-    reaction(turning_timer, gyro.z) -> reset(DRIVING_DOWN), disp.line2 {=
+    reaction(turning_timer, gyro.z) -> reset(START_GOING_DOWN), disp.line2, disp.line3, motors.left_speed, motors.right_speed {=
       static char buf0[17];
       snprintf(buf0, 17, "gyro:%3.3f", gyro.z->value);
       lf_set(disp.line2, buf0);
       
-      if (fabsf(gyro.z->value - self->gyro_turn_initial) >= 180) {
+      if (fabsf(gyro.z->value - self->gyro_turn_initial) >= 150) {
+        lf_set(motors.right_speed, 0.1f);
+        lf_set(motors.left_speed, 0.1f);
+        lf_set(disp.line3, "START_GOING_DOWN");
+        lf_set_mode(START_GOING_DOWN);
+        reset_buffer(self->pitch_buffer, 10);
+      }
+    =}
+  }
+
+  mode START_GOING_DOWN{
+    timer drive_timer(100 ms, 100 ms)
+    reaction(drive_timer, tilt.pitch, tilt.roll) -> reset(DRIVING_DOWN), disp.line1, disp.line3 {=
+      const int PITCH_THRESH = 15.0f;
+
+      cycle_buffer(self->pitch_buffer, 10, tilt.pitch->value);
+      if (average_buffer(self->pitch_buffer, 10) < -PITCH_THRESH) {
+        lf_set(disp.line3, "DRIVING_DOWN");
         lf_set_mode(DRIVING_DOWN);
       }
     =}
+
   }
   
   mode DRIVING_DOWN {
     timer detect_timer2(0, sample_period)
     reaction(detect_timer2, tilt.roll, tilt.pitch, gyro.z) -> reset(BACK_DOWN), reset(STOP), reset(CORRECT_PITCH_DOWN), disp.line3, motors.left_speed, motors.right_speed {=
+      const int PITCH_THRESH = 2.0f;
+      cycle_buffer(self->pitch_buffer, 10, tilt.pitch->value);
       float roll = tilt.roll->value;
-      float pitch = tilt.pitch->value;
-      int pitch_sign = pitch > 0 ? 1 : -1;
-      
-      if (pitch < 2) {
-        lf_set_mode(STOP);
-        lf_set(motors.right_speed, 0.0f);
-        lf_set(motors.left_speed, 0.0f);
-        lf_set(disp.line3, "STOP");
-      }
+      float pitch = average_buffer(self->pitch_buffer, 10);
+      int pitch_sign = pitch > 0 ? 1 : -1;   
 
       float left_speed = 0.1f - 0.2f * (roll / 90);
       float right_speed = 0.1f + 0.2f * (roll / 90);
@@ -208,7 +255,7 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
       lf_set(motors.right_speed, right_speed);
 
       static char buf0[17];
-      snprintf(buf0, 17, "l:%1.2f r:%1.2f", left_speed, right_speed);
+      snprintf(buf0, 17, "l:%1.2f r:%1.2f D", left_speed, right_speed);
       lf_set(disp.line3, buf0);
       
       if (pitch_sign > 0) {
@@ -216,6 +263,16 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
         int roll_sign = roll > 0 ? 1 : -1;
         lf_set(motors.left_speed, -0.1f * roll_sign);
         lf_set(motors.right_speed, 0.1f * roll_sign);
+      }
+      cycle_buffer(self->pitch_buffer, 10, pitch);
+      cycle_buffer(self->roll_buffer, 10, roll);
+      if (average_buffer(self->pitch_buffer, 10) > -PITCH_THRESH && 
+          average_buffer(self->roll_buffer, 10) < PITCH_THRESH &&
+          fabsf(average_buffer(self->roll_buffer, 10)) < PITCH_THRESH) {
+        lf_set_mode(STOP);
+        lf_set(motors.right_speed, 0.0f);
+        lf_set(motors.left_speed, 0.0f);
+        lf_set(disp.line3, "STOP");
       }
 
       if (self->dir != 0) {
@@ -228,7 +285,7 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   }
 
   mode TURNING_DOWN {
-    timer turn_timer2(1 s, 1 s)
+    timer turn_timer2(500 ms, 500 ms)
 
     reaction(turn_timer2) -> reset(DRIVING_DOWN), disp.line3, motors.left_speed, motors.right_speed {=
       lf_set_mode(DRIVING_DOWN);
@@ -243,14 +300,15 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
     timer pitch_timer2(0 s, 1 s)
 
     reaction(pitch_timer2, tilt.pitch) -> reset(DRIVING_DOWN), reset(STOP), disp.line3, motors.left_speed, motors.right_speed {=
-      if (tilt.pitch->value < 2) {
+      cycle_buffer(self->pitch_buffer, 10, tilt.pitch->value);
+      if (average_buffer(self->pitch_buffer, 10) < 2) {
         lf_set_mode(STOP);
         lf_set(motors.right_speed, 0.0f);
         lf_set(motors.left_speed, 0.0f);
         lf_set(disp.line3, "STOP");
       }
       
-      int pitch_sign = tilt.pitch->value > 0 ? 1 : -1;
+      int pitch_sign = average_buffer(self->pitch_buffer, 10) > 0 ? 1 : -1;
       if (pitch_sign < 0) {
         lf_set_mode(DRIVING_DOWN);
       }
@@ -268,6 +326,11 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   }
 
   mode STOP {
-
+    timer stop_timer(1 s, 1 s)
+    reaction(stop_timer, tilt.pitch, tilt.roll) -> disp.line2 {=
+      static char buf[17];
+      snprintf(buf, 17, "P:%3.2f R:%3.2f", tilt.pitch->value, tilt.roll->value);
+      lf_set(disp.line2, buf);
+    =}
   }
 }
