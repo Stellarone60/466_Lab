@@ -21,7 +21,7 @@ import Display from "lib/Display.lf"
 import MotorsWithFeedback from "lib/MotorsWithFeedback.lf"
 import Tilt from "lib/Tilt.lf"
 import Encoders from "lib/Encoders.lf"
-import Gyro from "lib/IMU.lf"
+import GyroAngle from "lib/IMU.lf"
 
 main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   line = new Line()
@@ -29,7 +29,7 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   motors = new MotorsWithFeedback()
   encoders = new Encoders()
   tilt = new Tilt()
-  gyro = new Gyro()
+  gyro = new GyroAngle()
 
   encoders.right -> motors.right
   encoders.left -> motors.left
@@ -85,7 +85,7 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
   =}
 
   initial mode CALIBRATE {
-    timer calibrate_timer(0, calibration_time)
+    timer calibrate_timer(calibration_time, calibration_time)
     reaction(calibrate_timer) -> reset(DRIVING_UP), motors.right_speed, motors.left_speed {=
       lf_set_mode(DRIVING_UP);
       lf_set(motors.right_speed, 0.1f);
@@ -99,14 +99,6 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
       float roll = tilt.roll->value;
       float pitch = tilt.pitch->value;
       int pitch_sign = pitch > 0 ? 1 : -1;
-      
-      if (pitch < 2) {
-        lf_set_mode(TURNING_AROUND);
-        self->gyro_turn_initial = gyro.z->value;
-        lf_set(motors.right_speed, -0.1f);
-        lf_set(motors.left_speed, 0.1f);
-        lf_set(disp.line3, "TURNING_AROUND");
-      }
 
       float left_speed = 0.1f - 0.2f * (roll / 90);
       float right_speed = 0.1f + 0.2f * (roll / 90);
@@ -122,6 +114,14 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
         int roll_sign = roll > 0 ? 1 : -1;
         lf_set(motors.left_speed, -0.1f * roll_sign);
         lf_set(motors.right_speed, 0.1f * roll_sign);
+      }
+
+      if (pitch < 2) {
+        lf_set_mode(TURNING_AROUND);
+        self->gyro_turn_initial = gyro.z->value;
+        lf_set(motors.right_speed, -0.1f);
+        lf_set(motors.left_speed, 0.1f);
+        lf_set(disp.line3, "TURNING_AROUND");
       }
 
       if (self->dir != 0) {
@@ -176,12 +176,13 @@ main reactor(calibration_time: time = 10 s, sample_period: time = 100 ms) {
 
   mode TURNING_AROUND {
     timer turning_timer(0, sample_period)
+
     reaction(turning_timer, gyro.z) -> reset(DRIVING_DOWN), disp.line2 {=
       static char buf0[17];
       snprintf(buf0, 17, "gyro:%3.3f", gyro.z->value);
       lf_set(disp.line2, buf0);
       
-      if (fabsf(gyro.z->value - self->gyro_turn_initial) > 180) {
+      if (fabsf(gyro.z->value - self->gyro_turn_initial) >= 180) {
         lf_set_mode(DRIVING_DOWN);
       }
     =}
